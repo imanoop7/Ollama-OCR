@@ -10,3 +10,7 @@ input/img1.png
 /build
 setup.py
 setup.py
+__pycache__
+.DS_Store
+*.pyc
+.DS_Store
