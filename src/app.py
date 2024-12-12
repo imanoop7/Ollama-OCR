@@ -1,5 +1,5 @@
 import streamlit as st
-from .ocr_processor import OCRProcessor
+from ocr_processor import OCRProcessor
 import tempfile
 import os
 from PIL import Image
