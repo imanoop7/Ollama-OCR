@@ -60,7 +60,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 def get_available_models():
-    return ["llava:7b", "llama3.2-vision:11b"]
+    return ["llama3.2-vision:11b"]
 
 def process_single_image(processor, image_path, format_type, enable_preprocessing):
     """Process a single image and return the result"""
@@ -102,7 +102,7 @@ def main():
         
         format_type = st.selectbox(
             "📄 Output Format",
-            ["markdown", "text", "json", "structured", "key_value"],
+            ["markdown", "text", "json", "structured", "key_value", "understand"],
             help="Choose how you want the extracted text to be formatted"
         )
 
@@ -110,13 +110,13 @@ def main():
             "🔄 Parallel Processing",
             min_value=1,
             max_value=8,
-            value=2,
+            value=1,
             help="Number of images to process in parallel (for batch processing)"
         )
 
         enable_preprocessing = st.checkbox(
             "🔍 Enable Preprocessing",
-            value=True,
+            value=False,
             help="Apply image enhancement and preprocessing"
         )
         
@@ -159,6 +159,8 @@ def main():
                 st.subheader(f"📸 Input Images ({len(uploaded_files)} files)")
                 cols = st.columns(min(len(uploaded_files), 4))
                 for idx, uploaded_file in enumerate(uploaded_files):
+                    if '.pdf' in uploaded_file.name:
+                        continue
                     with cols[idx % 4]:
                         image = Image.open(uploaded_file)
                         st.image(image, use_container_width=True, caption=uploaded_file.name)

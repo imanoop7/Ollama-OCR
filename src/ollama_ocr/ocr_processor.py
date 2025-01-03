@@ -31,16 +31,6 @@ class OCRProcessor:
         - Enhance contrast
         - Reduce noise
         """
-        # Handle PDF files
-        if image_path.lower().endswith('.pdf'):
-            pages = convert_from_path(image_path)
-            if not pages:
-                raise ValueError("Could not convert PDF to image")
-            # Save first page as temporary image
-            temp_path = f"{image_path}_temp.jpg"
-            pages[0].save(temp_path, 'JPEG')
-            image_path = temp_path
-
         # Read image
         image = cv2.imread(image_path)
         if image is None:
@@ -65,21 +55,15 @@ class OCRProcessor:
 
         return preprocessed_path
 
-    def process_image(self, image_path: str, format_type: str = "markdown", preprocess: bool = True) -> str:
-        """
-        Process an image and extract text in the specified format
-        
-        Args:
-            image_path: Path to the image file
-            format_type: One of ["markdown", "text", "json", "structured", "key_value"]
-            preprocess: Whether to apply image preprocessing
-        """
+
+
+    def single_item_process(self, image_path: str, format_type: str = "markdown", preprocess: bool = True):
         try:
             if preprocess:
                 image_path = self._preprocess_image(image_path)
-            
+
             image_base64 = self._encode_image(image_path)
-            
+
             # Clean up temporary files
             if image_path.endswith(('_preprocessed.jpg', '_temp.jpg')):
                 os.remove(image_path)
@@ -92,7 +76,7 @@ class OCRProcessor:
                 - Use proper markdown formatting for emphasis and structure
                 - Preserve the original text hierarchy and formatting as much as possible""",
 
-                "text": """Please look at this image and extract all the text content. 
+                "text": """Please look at this image and extract all the text content.
                 Provide the output as plain text, maintaining the original layout and line breaks where appropriate.
                 Include all visible text from the image.""",
 
@@ -112,7 +96,9 @@ class OCRProcessor:
                 - Look for labels and their associated values
                 - Extract form fields and their contents
                 - Identify any paired information
-                - Present each pair on a new line as 'key: value'"""
+                - Present each pair on a new line as 'key: value'""",
+
+                "understand": """Please look at the image and write a summary of what's inside."""
             }
 
             # Get the appropriate prompt
@@ -125,13 +111,12 @@ class OCRProcessor:
                 "stream": False,
                 "images": [image_base64]
             }
-
             # Make the API call to Ollama
             response = requests.post(self.base_url, json=payload)
             response.raise_for_status()  # Raise an exception for bad status codes
-            
+
             result = response.json().get("response", "")
-            
+
             # Clean up the result if needed
             if format_type == "json":
                 try:
@@ -141,10 +126,35 @@ class OCRProcessor:
                 except json.JSONDecodeError:
                     # If JSON parsing fails, return the raw result
                     return result
-            
+
             return result
         except Exception as e:
             return f"Error processing image: {str(e)}"
+
+
+    def process_image(self, image_path: str, format_type: str = "markdown", preprocess: bool = True) -> str:
+        """
+        Process an image and extract text in the specified format
+        
+        Args:
+            image_path: Path to the image file
+            format_type: One of ["markdown", "text", "json", "structured", "key_value"]
+            preprocess: Whether to apply image preprocessing
+        """
+        if image_path.lower().endswith('.pdf'):
+            pages = convert_from_path(image_path)
+            if not pages:
+                raise ValueError("Could not convert PDF to image")
+            result = ""
+            for page_id in range(len(pages)):
+                temp_path = f"{image_path}_temp.jpg"
+                pages[page_id].save(temp_path, 'JPEG')
+                image_path = temp_path
+                result += "{}\n".format(self.single_item_process(image_path, format_type, preprocess))
+        else:
+            result = self.single_item_process(image_path, format_type, preprocess)
+        return result
+
 
     def process_batch(
         self,
