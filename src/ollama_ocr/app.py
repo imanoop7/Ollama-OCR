@@ -110,13 +110,13 @@ def main():
             "🔄 Parallel Processing",
             min_value=1,
             max_value=8,
-            value=1,
+            value=2,
             help="Number of images to process in parallel (for batch processing)"
         )
 
         enable_preprocessing = st.checkbox(
             "🔍 Enable Preprocessing",
-            value=False,
+            value=True,
             help="Apply image enhancement and preprocessing"
         )
         
@@ -159,7 +159,7 @@ def main():
                 st.subheader(f"📸 Input Images ({len(uploaded_files)} files)")
                 cols = st.columns(min(len(uploaded_files), 4))
                 for idx, uploaded_file in enumerate(uploaded_files):
-                    if '.pdf' in uploaded_file.name:
+                    if uploaded_file.name.lower().endswith('.pdf'):
                         continue
                     with cols[idx % 4]:
                         image = Image.open(uploaded_file)
