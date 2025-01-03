@@ -102,7 +102,7 @@ def main():
         
         format_type = st.selectbox(
             "📄 Output Format",
-            ["markdown", "text", "json", "structured", "key_value"],
+            ["markdown", "text", "json", "structured", "key_value", "understand"],
             help="Choose how you want the extracted text to be formatted"
         )
 
@@ -159,6 +159,8 @@ def main():
                 st.subheader(f"📸 Input Images ({len(uploaded_files)} files)")
                 cols = st.columns(min(len(uploaded_files), 4))
                 for idx, uploaded_file in enumerate(uploaded_files):
+                    if uploaded_file.name.lower().endswith('.pdf'):
+                        continue
                     with cols[idx % 4]:
                         image = Image.open(uploaded_file)
                         st.image(image, use_container_width=True, caption=uploaded_file.name)
