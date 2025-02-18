@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Union
 import os
 import base64
 import requests
+from contextlib import suppress
 from tqdm import tqdm
 import concurrent.futures
 from pathlib import Path
@@ -149,8 +150,11 @@ class OCRProcessor:
             
             return result
         except Exception as e:
-            return f"Error processing image: {str(e)}"
-
+            msg = f"Error processing image: {str(e)}"
+            with suppress(Exception):
+                msg += f" [extra_info]: {response.json().get('error')}"
+            return msg
+            
     def process_batch(
         self,
         input_path: Union[str, List[str]],
