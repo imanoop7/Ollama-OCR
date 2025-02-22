@@ -25,22 +25,11 @@ class OCRProcessor:
 
     def _preprocess_image(self, image_path: str) -> str:
         """
-        Preprocess image before OCR:
-        - Convert PDF to image if needed
+        Preprocess file before OCR:
         - Auto-rotate
         - Enhance contrast
         - Reduce noise
         """
-        # Handle PDF files
-        if image_path.lower().endswith('.pdf'):
-            pages = convert_from_path(image_path)
-            if not pages:
-                raise ValueError("Could not convert PDF to image")
-            # Save first page as temporary image
-            temp_path = f"{image_path}_temp.jpg"
-            pages[0].save(temp_path, 'JPEG')
-            image_path = temp_path
-
         # Read image
         image = cv2.imread(image_path)
         if image is None:
@@ -62,8 +51,54 @@ class OCRProcessor:
         # Save preprocessed image
         preprocessed_path = f"{image_path}_preprocessed.jpg"
         cv2.imwrite(preprocessed_path, denoised)
-
+        if image_path.endswith('_temp.jpg'):
+            os.remove(image_path)
         return preprocessed_path
+        
+    def _preprocess_file(self, file_path: str) -> Union[List[str], str]:
+        """
+        Preprocess file before OCR:
+        - Convert PDF to image if needed
+        - Apply image preprocessing
+        """
+        # Handle PDF files
+        if file_path.lower().endswith('.pdf'):
+            pages = convert_from_path(file_path)
+            if not pages:
+                raise ValueError("Could not convert PDF to image")
+            images_paths = []
+            for i, p in enumerate(pages):
+                temp_path = f"{file_path}_{i}_temp.jpg"
+                p.save(temp_path, 'JPEG')
+                images_paths.append(temp_path)                    
+            return [self._preprocess_image(img_p) for img_p in images_paths]          
+
+        return self._preprocess_image(file_path)
+
+
+    def process_pdf(self, file_path: str, format_type: str = "markdown", custom_prompt: str = None) -> str:
+        """
+        Process an pdf and extract text in the specified format
+        
+        Args:
+            pdf_path: Path to the image file
+            format_type: One of ["markdown", "text", "json", "structured", "key_value"]
+            custom_prompt: If provided, this prompt overrides the default based on format_type
+        
+        Returns:
+            Extracted text content in the string format
+        """
+        try:
+            images_paths = self._preprocess_file(file_path)
+            api_content = [self.__invoke_api(img_p, format_type, custom_prompt) for img_p in images_paths]
+            if format_type == 'json':
+                return json.dumps([json.loads(a_c) for a_c in api_content], indent=2)
+            return os.linesep.join(api_content)
+        except Exception as e:
+            return f"Error processing image: {str(e)}"
+
+
+        
 
     def process_image(self, image_path: str, format_type: str = "markdown", preprocess: bool = True, custom_prompt: str = None) -> str:
         """
@@ -77,79 +112,92 @@ class OCRProcessor:
         """
         try:
             if preprocess:
-                image_path = self._preprocess_image(image_path)
+                preprocessed_image_path = self._preprocess_file(image_path)
             
-            image_base64 = self._encode_image(image_path)
-            
-            # Clean up temporary files
-            if image_path.endswith(('_preprocessed.jpg', '_temp.jpg')):
-                os.remove(image_path)
-
-            if custom_prompt and custom_prompt.strip():
-                prompt = custom_prompt
-                print("Using custom prompt:", prompt)  # Debug print
-            else:
-                # Generic prompt templates for different formats
-                prompts = {
-                    "markdown": """Please look at this image and extract all the text content. Format the output in markdown:
-                    - Use headers (# ## ###) for titles and sections
-                    - Use bullet points (-) for lists
-                    - Use proper markdown formatting for emphasis and structure
-                    - Preserve the original text hierarchy and formatting as much as possible""",
-    
-                    "text": """Please look at this image and extract all the text content. 
-                    Provide the output as plain text, maintaining the original layout and line breaks where appropriate.
-                    Include all visible text from the image.""",
-    
-                    "json": """Please look at this image and extract all the text content. Structure the output as JSON with these guidelines:
-                    - Identify different sections or components
-                    - Use appropriate keys for different text elements
-                    - Maintain the hierarchical structure of the content
-                    - Include all visible text from the image""",
-    
-                    "structured": """Please look at this image and extract all the text content, focusing on structural elements:
-                    - Identify and format any tables
-                    - Extract lists and maintain their structure
-                    - Preserve any hierarchical relationships
-                    - Format sections and subsections clearly""",
-    
-                    "key_value": """Please look at this image and extract text that appears in key-value pairs:
-                    - Look for labels and their associated values
-                    - Extract form fields and their contents
-                    - Identify any paired information
-                    - Present each pair on a new line as 'key: value'"""
-                }
-    
-                prompt = prompts.get(format_type, prompts["text"])
-                print("Using default prompt:", prompt)  # Debug print
-
-            # Prepare the request payload
-            payload = {
-                "model": self.model_name,
-                "prompt": prompt,
-                "stream": False,
-                "images": [image_base64]
-            }
-
-            # Make the API call to Ollama
-            response = requests.post(self.base_url, json=payload)
-            response.raise_for_status()  # Raise an exception for bad status codes
-            
-            result = response.json().get("response", "")
-            
-            # Clean up the result if needed
-            if format_type == "json":
-                try:
-                    # Try to parse and re-format JSON if it's valid
-                    json_data = json.loads(result)
-                    return json.dumps(json_data, indent=2)
-                except json.JSONDecodeError:
-                    # If JSON parsing fails, return the raw result
-                    return result
-            
-            return result
+            if isinstance(preprocessed_image_path, list):
+                print('Warning! you are using PDF in process_image function. Consider switching to process_pdf. Only first page will be evaluated.')
+                preprocessed_image_path = preprocessed_image_path[0]
+                
+            return self.__invoke_api(preprocessed_image_path, format_type, custom_prompt)
         except Exception as e:
             return f"Error processing image: {str(e)}"
+
+
+    def __invoke_api(self, image_path: str, format_type: str = "markdown", custom_prompt: str = None):
+        """
+        Invoke the Ollama API to extract text from an image
+        """
+        image_base64 = self._encode_image(image_path)
+            
+        # Clean up temporary files
+        if image_path.endswith(('_preprocessed.jpg', '_temp.jpg')):
+            os.remove(image_path)
+
+        if custom_prompt and custom_prompt.strip():
+            prompt = custom_prompt
+            print("Using custom prompt:", prompt)  # Debug print
+        else:
+            # Generic prompt templates for different formats
+            prompts = {
+                "markdown": """Please look at this image and extract all the text content. Format the output in markdown:
+                - Use headers (# ## ###) for titles and sections
+                - Use bullet points (-) for lists
+                - Use proper markdown formatting for emphasis and structure
+                - Preserve the original text hierarchy and formatting as much as possible""",
+
+                "text": """Please look at this image and extract all the text content. 
+                Provide the output as plain text, maintaining the original layout and line breaks where appropriate.
+                Include all visible text from the image.""",
+
+                "json": """Please look at this image and extract all the text content. Structure the output as JSON with these guidelines:
+                - Identify different sections or components
+                - Use appropriate keys for different text elements
+                - Maintain the hierarchical structure of the content
+                - Include all visible text from the image""",
+
+                "structured": """Please look at this image and extract all the text content, focusing on structural elements:
+                - Identify and format any tables
+                - Extract lists and maintain their structure
+                - Preserve any hierarchical relationships
+                - Format sections and subsections clearly""",
+
+                "key_value": """Please look at this image and extract text that appears in key-value pairs:
+                - Look for labels and their associated values
+                - Extract form fields and their contents
+                - Identify any paired information
+                - Present each pair on a new line as 'key: value'"""
+            }
+
+            prompt = prompts.get(format_type, prompts["text"])
+            print("Using default prompt:", prompt)  # Debug print
+
+        # Prepare the request payload
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "images": [image_base64]
+        }
+
+        # Make the API call to Ollama
+        response = requests.post(self.base_url, json=payload)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        
+        result = response.json().get("response", "")
+        
+        # Clean up the result if needed
+        if format_type == "json":
+            try:
+                # Try to parse and re-format JSON if it's valid
+                json_data = json.loads(result)
+                return json.dumps(json_data, indent=2)
+            except json.JSONDecodeError:
+                # If JSON parsing fails, return the raw result
+                return result
+        
+        return result
+
+
 
     def process_batch(
         self,
